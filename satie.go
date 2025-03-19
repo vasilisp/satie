@@ -603,7 +603,8 @@ func parseDimacs(filename string) (*[][]Literal, int) {
 			}
 			lits = append(lits, Literal(num))
 		}
-		clauses = append(clauses, lits)
+		slices.Sort(lits)
+		clauses = append(clauses, slices.Compact(lits))
 	}
 	if nClauses != len(clauses) {
 		fmt.Printf("c invalid DIMACS file: %d clauses claimed, %d clauses in file", nClauses, len(clauses))
