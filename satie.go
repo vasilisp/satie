@@ -100,49 +100,63 @@ func (q *Queue) clear() {
 type Stats struct {
 	decisions int
 	conflicts int
+	restarts  int
+}
+
+func newStats() *Stats {
+	return &Stats{
+		decisions: 0,
+		conflicts: 0,
+		restarts:  0,
+	}
 }
 
 type Solver struct {
-	constrs       []*Clause
-	learned       []*Clause
-	claInc        float64
-	claDecay      float64
-	varInc        float64
-	varDecay      float64
-	activity      []float64
-	watches       []([]*Clause)
-	undos         []([]*Clause)
-	propQ         *Queue
-	assigns       []Assign
-	shadowAssigns []Assign
-	trail         []Literal
-	trailLim      []int
-	reason        []*Clause
-	level         []int
-	rootLevel     int
-	stats         Stats
+	constrs               []*Clause
+	learned               []*Clause
+	claInc                float64
+	claDecay              float64
+	varInc                float64
+	varDecay              float64
+	activity              []float64
+	watches               []([]*Clause)
+	undos                 []([]*Clause)
+	propQ                 *Queue
+	assigns               []Assign
+	shadowAssigns         []Assign
+	trail                 []Literal
+	trailLim              []int
+	reason                []*Clause
+	level                 []int
+	rootLevel             int
+	conflictsUntilRestart int
+	restartFreq           int
+	stats                 *Stats
 }
 
 func NewSolver(clauses *[][]Literal, nVars int) *Solver {
+	const restartFreq = 1024
 	sv := &Solver{
-		constrs:       make([]*Clause, 0),
-		learned:       make([]*Clause, 0),
-		claInc:        1,
-		claDecay:      1,
-		varInc:        1.0,
-		varDecay:      0.95,
-		activity:      make([]float64, 0),
-		watches:       make([]([]*Clause), 0),
-		undos:         make([]([]*Clause), 0),
-		propQ:         NewQueue(),
-		assigns:       make([]Assign, 0),
-		shadowAssigns: make([]Assign, 0),
-		trail:         make([]Literal, 0),
-		trailLim:      make([]int, 0),
-		reason:        make([]*Clause, 0),
-		level:         make([]int, 0),
-		rootLevel:     0,
-		stats:         Stats{},
+		constrs:               make([]*Clause, 0),
+		learned:               make([]*Clause, 0),
+		claInc:                1,
+		claDecay:              1,
+		varInc:                1.0,
+		varDecay:              0.95,
+		activity:              make([]float64, 0),
+		watches:               make([]([]*Clause), 0),
+		undos:                 make([]([]*Clause), 0),
+		propQ:                 NewQueue(),
+		assigns:               make([]Assign, 0),
+		shadowAssigns:         make([]Assign, 0),
+		trail:                 make([]Literal, 0),
+		trailLim:              make([]int, 0),
+		reason:                make([]*Clause, 0),
+		level:                 make([]int, 0),
+		rootLevel:             0,
+		conflictsUntilRestart: restartFreq,
+		restartFreq:           restartFreq,
+		stats:                 newStats(),
 	}
 	for range nVars {
 		sv.newVar()
@@ -344,13 +358,15 @@ func (sv *Solver) analyze(confl *Clause) (*[]Literal, int) {
 	return &out_learnt, out_btlevel
 }
 
-func (sv *Solver) record(lits *[]Literal) {
+func (sv *Solver) record(lits *[]Literal, doEnqueue bool) {
 	cl, ok := sv.newClause(lits, true)
 	assert(ok, "record clause")
 	if cl != nil {
 		sv.learned = append(sv.learned, cl)
 	}
-	sv.enqueue((*lits)[0], cl)
+	if doEnqueue {
+		sv.enqueue((*lits)[0], cl)
+	}
 }
 
 func (sv *Solver) undoOne() {
@@ -517,8 +533,17 @@ func (sv *Solver) search() bool {
 				return false
 			}
 			learnt, backtrackLevel := sv.analyze(confl)
-			sv.cancelUntil(max(backtrackLevel, sv.rootLevel))
-			sv.record(learnt)
+			sv.conflictsUntilRestart--
+			if sv.conflictsUntilRestart == 0 {
+				sv.stats.restarts++
+				sv.restartFreq = 2 * sv.restartFreq
+				sv.conflictsUntilRestart = sv.restartFreq
+				sv.cancelUntil(0)
+				sv.record(learnt, false)
+			} else {
+				sv.cancelUntil(max(backtrackLevel, sv.rootLevel))
+				sv.record(learnt, true)
+			}
 		} else {
 			if sv.nAssigns() == sv.nVars() {
 				return true
@@ -534,6 +559,7 @@ func (sv *Solver) search() bool {
 func (sv *Solver) printStats() {
 	fmt.Printf("c decisions: %d\n", sv.stats.decisions)
 	fmt.Printf("c conflicts: %d\n", sv.stats.conflicts)
+	fmt.Printf("c restarts: %d\n", sv.stats.restarts)
 }
 
 func parseDimacs(filename string) (*[][]Literal, int) {
