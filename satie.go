@@ -671,11 +671,6 @@ func main() {
 		}
 		if cl != nil {
 			sv.checkTrailConsistency()
-			for _, p := range cl.lits {
-				fmt.Println(sv.litDecisionLevel(p))
-			}
-			fmt.Println(sv.watches[cl.lits[0].neg().index()])
-			fmt.Println(sv.watches[cl.lits[1].neg().index()])
 			fatal("clause is not satisfied: %v", cl)
 		}
 		sv.printStats()
