@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func fatal(format string, args ...any) {
@@ -98,16 +99,18 @@ func (q *Queue) clear() {
 }
 
 type Stats struct {
-	decisions int
-	conflicts int
-	restarts  int
+	decisions    int
+	conflicts    int
+	restarts     int
+	creationTime time.Time
 }
 
 func newStats() *Stats {
 	return &Stats{
-		decisions: 0,
-		conflicts: 0,
-		restarts:  0,
+		decisions:    0,
+		conflicts:    0,
+		restarts:     0,
+		creationTime: time.Now(),
 	}
 }
 
@@ -516,15 +519,15 @@ func (sv *Solver) checkTrailConsistency() {
 
 // Update search() to track statistics and print them
 func (sv *Solver) search() bool {
-	const conflictPrintFreq = 10000
+	const statPrintFreq = 10000
 	const decayFreq = 100 // Decay activities every 100 conflicts
 
 	for {
 		confl := sv.propagate()
 		if confl != nil {
 			sv.stats.conflicts++
-			if sv.stats.conflicts%conflictPrintFreq == 0 {
-				fmt.Println("c conflicts: ", sv.stats.conflicts)
+			if sv.stats.conflicts%statPrintFreq == 0 {
+				sv.printStats()
 			}
 			if sv.stats.conflicts%decayFreq == 0 {
 				sv.varDecayActivity()
@@ -557,9 +560,8 @@ func (sv *Solver) search() bool {
 
 // Add method to print statistics
 func (sv *Solver) printStats() {
-	fmt.Printf("c decisions: %d\n", sv.stats.decisions)
-	fmt.Printf("c conflicts: %d\n", sv.stats.conflicts)
-	fmt.Printf("c restarts: %d\n", sv.stats.restarts)
+	uptime := time.Since(sv.stats.creationTime).Seconds()
+	fmt.Printf("c %.2fs decisions %d conflicts %d restarts %d\n", uptime, sv.stats.decisions, sv.stats.conflicts, sv.stats.restarts)
 }
 
 func parseDimacs(filename string) (*[][]Literal, int) {
